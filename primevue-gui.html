@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>primevue-jsonschema-form</title>
+  <link rel="stylesheet" href="https://unpkg.com/primeicons@7.0.0/primeicons.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://unpkg.com/primevue"></script>
+
+  <script src="https://unpkg.com/@primevue/themes/umd/aura.min.js"></script>
+  <!-- <script src="https://unpkg.com/@primevue/themes/umd/material.min.js"></script> -->
+  <!-- <script src="https://unpkg.com/@primevue/themes/umd/nora.min.js"></script> -->
+  <!-- <script src="https://unpkg.com/@primevue/themes/umd/lara.min.js"></script> -->
+
+  <script src="https://cdn.jsdelivr.net/npm/markdown-it@13.0.1/dist/markdown-it.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+  <link rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.6.1/github-markdown.min.css">
+  <style>
+    .markdown-body {
+      box-sizing: border-box;
+      min-width: 100px;
+      max-width: 980px;
+      margin: 0px 0px 0px;
+      padding: 15px;
+    }
+
+    .app-dark .markdown-body {
+      background-color: #18181B;
+      color: white;
+    }
+  </style>
+</head>
+
+<body class="bg-gray-100">
+
+  <div id="app">
+    <p-toast style="width: 80%;"></p-toast>
+    <!-- App Header -->
+    <p class="text-xl font-bold text-center px-4 py-2">primevue-jsonschema-form</p>
+    <p-splitter style="height: 300px">
+      <p-splitterpanel class="flex items-center justify-center">
+        <p-textarea v-model="jsonschema" class="h-full w-full" />
+      </p-splitterpanel>
+      <p-splitterpanel class="flex items-center justify-center">
+        <!-- auto to build form by jsonschema -->
+        <form @submit.prevent="handleSubmit">
+          <div v-for="(field, key) in parsedSchema.properties" :key="key" class="mb-4">
+            <label :for="key" class="block mb-1 font-medium">
+              {{ field.title || key }}
+              <span v-if="isRequired(key)" class="text-red-500">*</span>
+            </label>
+
+            <!-- String -->
+            <p-inputtext v-if="field.type === 'string' && key !== 'password' && key !== 'bio'" v-model="formData[key]"
+              :id="key" class="w-full" />
+
+            <!-- Textarea -->
+            <p-textarea v-else-if="key === 'bio'" v-model="formData[key]" :id="key" class="w-full" />
+
+            <!-- Password -->
+            <p-password v-else-if="key === 'password'" v-model="formData[key]" :id="key" class="w-full" toggle-mask />
+
+            <!-- Number -->
+            <p-inputnumber v-else-if="field.type === 'integer'" v-model="formData[key]" :id="key" class="w-full" />
+
+            <!-- Fallback -->
+            <p-inputtext v-else v-model="formData[key]" :id="key" class="w-full" />
+          </div>
+
+          <p-button label="Submit" type="submit" class="w-full"></p-button>
+        </form>
+      </p-splitterpanel>
+    </p-splitter>
+  </div>
+
+</body>
+
+
+<script>
+  const { createApp, ref } = Vue;
+
+  const app = createApp({
+    setup() {
+
+      const toast = PrimeVue.useToast();
+      const showInfo = (msg = 'Info Content', life = 1000) => {
+        toast.add({ severity: 'info', summary: 'Info', detail: msg, life: life });
+      };
+      const showError = (msg = 'Error Content', life = 5000) => {
+        console.error(msg);
+        toast.add({ severity: 'error', summary: 'Error', detail: msg, life: life });
+      };
+
+      const errorMessage = ref(null);
+      const loading = ref(false);
+
+      // Tab logic
+      const jsonschema = ref(`
+{
+  "title": "A registration form",
+  "description": "A simple form example.",
+  "type": "object",
+  "required": [
+    "firstName",
+    "lastName"
+  ],
+  "properties": {
+    "firstName": {
+      "type": "string",
+      "title": "First name",
+      "default": "Chuck"
+    },
+    "lastName": {
+      "type": "string",
+      "title": "Last name"
+    },
+    "age": {
+      "type": "integer",
+      "title": "Age"
+    },
+    "bio": {
+      "type": "string",
+      "title": "Bio"
+    },
+    "password": {
+      "type": "string",
+      "title": "Password",
+      "minLength": 3
+    },
+    "telephone": {
+      "type": "string",
+      "title": "Telephone",
+      "minLength": 10
+    }
+  }
+}
+`);
+
+      // Helper: Build children nodes from API response
+      function getIcon(entry) {
+        if (entry.isDir) {
+          return 'pi pi-fw pi-folder';
+        }
+        // Simple filetype detection (add more as you like)
+        const ext = entry.name.split('.').pop().toLowerCase();
+        if (['jpg', 'png', 'gif', 'jpeg', 'bmp', 'svg'].includes(ext)) {
+          return 'pi pi-fw pi-image';
+        }
+        if (['txt', 'md', 'log'].includes(ext)) {
+          return 'pi pi-fw pi-file';
+        }
+        if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) {
+          return 'pi pi-fw pi-inbox';
+        }
+        if (['js', 'ts', 'json', 'html', 'css', 'vue'].includes(ext)) {
+          return 'pi pi-fw pi-code';
+        }
+        // Fallback
+        return 'pi pi-fw pi-file';
+      }
+
+      const parsedSchema = computed(() => {
+        try {
+          return JSON.parse(jsonschema.value);
+        } catch (e) {
+          return { properties: {} };
+        }
+      });
+
+      const formData = ref({});
+
+      const initializeFormData = () => {
+        const props = parsedSchema.value.properties || {};
+        for (const key in props) {
+          formData.value[key] = props[key].default || '';
+        }
+      };
+
+      // Watch schema and re-initialize
+      // watch(parsedSchema, () => {
+      //   initializeFormData();
+      // }, { immediate: true });
+
+      const isRequired = (key) => {
+        return parsedSchema.value.required?.includes(key);
+      };
+
+      const handleSubmit = () => {
+        console.log("Form submitted:", formData.value);
+        app.config.globalProperties.$toast.add({ severity: 'success', summary: 'Submitted', detail: JSON.stringify(formData.value, null, 2), life: 5000 });
+      };
+      return {
+        errorMessage,
+        loading,
+        jsonschema,
+        parsedSchema,
+        formData,
+        isRequired,
+        handleSubmit,
+      };
+    }
+  });
+
+  {
+
+    app.use(PrimeVue.Config, {
+      theme: {
+        // preset: PrimeVue.Themes.Aura,
+        // preset: PrimeVue.Themes.Material,
+        // preset: PrimeVue.Themes.Lara,
+        // preset: PrimeVue.Themes.Nora,
+        preset: PrimeVue.Themes.Aura,
+        options: { prefix: 'p', darkModeSelector: '.app-dark', cssLayer: false, }
+      }
+    });
+
+    app.use(PrimeVue.ToastService);
+
+    app.directive('ripple', PrimeVue.Ripple);
+
+    app.component('p-themeswitcher', PrimeVue.ThemeSwitcher);
+    app.component('p-autocomplete', PrimeVue.AutoComplete);
+    app.component('p-accordion', PrimeVue.Accordion);
+    app.component('p-accordionpanel', PrimeVue.AccordionPanel);
+    app.component('p-accordionheader', PrimeVue.AccordionHeader);
+    app.component('p-accordioncontent', PrimeVue.AccordionContent);
+    app.component('p-accordiontab', PrimeVue.AccordionTab);
+    app.component('p-animateonscroll', PrimeVue.AnimateOnScroll);
+    app.component('p-avatar', PrimeVue.Avatar);
+    app.component('p-avatargroup', PrimeVue.AvatarGroup);
+    app.component('p-badge', PrimeVue.Badge);
+    app.component('p-badgedirective', PrimeVue.BadgeDirective);
+    app.component('p-blockui', PrimeVue.BlockUI);
+    app.component('p-button', PrimeVue.Button);
+    app.component('p-buttongroup', PrimeVue.ButtonGroup);
+    app.component('p-breadcrumb', PrimeVue.Breadcrumb);
+    app.component('p-calendar', PrimeVue.Calendar);
+    app.component('p-card', PrimeVue.Card);
+    app.component('p-cascadeselect', PrimeVue.CascadeSelect);
+    app.component('p-carousel', PrimeVue.Carousel);
+    app.component('p-checkbox', PrimeVue.Checkbox);
+    app.component('p-chip', PrimeVue.Chip);
+    app.component('p-chips', PrimeVue.Chips);
+    app.component('p-colorpicker', PrimeVue.ColorPicker);
+    app.component('p-column', PrimeVue.Column);
+    app.component('p-columngroup', PrimeVue.ColumnGroup);
+    app.component('p-confirmdialog', PrimeVue.ConfirmDialog);
+    app.component('p-confirmpopup', PrimeVue.ConfirmPopup);
+    app.component('p-confirmationservice', PrimeVue.ConfirmationService);
+    app.component('p-contextmenu', PrimeVue.ContextMenu);
+    app.component('p-datatable', PrimeVue.DataTable);
+    app.component('p-dataview', PrimeVue.DataView);
+    app.component('p-datepicker', PrimeVue.DatePicker);
+    app.component('p-deferredcontent', PrimeVue.DeferredContent);
+    app.component('p-dialog', PrimeVue.Dialog);
+    app.component('p-dialogservice', PrimeVue.DialogService);
+    app.component('p-divider', PrimeVue.Divider);
+    app.component('p-dock', PrimeVue.Dock);
+    app.component('p-drawer', PrimeVue.Drawer);
+    app.component('p-dynamicdialog', PrimeVue.DynamicDialog);
+    app.component('p-editor', PrimeVue.Editor);
+    app.component('p-fieldset', PrimeVue.Fieldset);
+    app.component('p-fileupload', PrimeVue.FileUpload);
+    app.component('p-floatlabel', PrimeVue.FloatLabel);
+    app.component('p-focustrap', PrimeVue.FocusTrap);
+    app.component('p-galleria', PrimeVue.Galleria);
+    app.component('p-iconfield', PrimeVue.IconField);
+    app.component('p-inputicon', PrimeVue.InputIcon);
+    app.component('p-image', PrimeVue.Image);
+    app.component('p-inlinemessage', PrimeVue.InlineMessage);
+    app.component('p-inplace', PrimeVue.Inplace);
+    app.component('p-inputchips', PrimeVue.InputChips);
+    app.component('p-inputgroup', PrimeVue.InputGroup);
+    app.component('p-inputgroupaddon', PrimeVue.InputGroupAddon);
+    app.component('p-inputmask', PrimeVue.InputMask);
+    app.component('p-inputnumber', PrimeVue.InputNumber);
+    app.component('p-inputotp', PrimeVue.InputOtp);
+    app.component('p-inputswitch', PrimeVue.InputSwitch);
+    app.component('p-inputtext', PrimeVue.InputText);
+    app.component('p-knob', PrimeVue.Knob);
+    app.component('p-listbox', PrimeVue.Listbox);
+    app.component('p-megamenu', PrimeVue.MegaMenu);
+    app.component('p-menu', PrimeVue.Menu);
+    app.component('p-menubar', PrimeVue.Menubar);
+    app.component('p-message', PrimeVue.Message);
+    app.component('p-metergroup', PrimeVue.MeterGroup);
+    app.component('p-multiselect', PrimeVue.MultiSelect);
+    app.component('p-orderlist', PrimeVue.OrderList);
+    app.component('p-organizationchart', PrimeVue.OrganizationChart);
+    app.component('p-overlaybadge', PrimeVue.OverlayBadge);
+    app.component('p-overlaypanel', PrimeVue.OverlayPanel);
+    app.component('p-paginator', PrimeVue.Paginator);
+    app.component('p-panel', PrimeVue.Panel);
+    app.component('p-panelmenu', PrimeVue.PanelMenu);
+    app.component('p-password', PrimeVue.Password);
+    app.component('p-picklist', PrimeVue.PickList);
+    app.component('p-popover', PrimeVue.Popover);
+    app.component('p-progressbar', PrimeVue.ProgressBar);
+    app.component('p-progressspinner', PrimeVue.ProgressSpinner);
+    app.component('p-rating', PrimeVue.Rating);
+    app.component('p-radiobutton', PrimeVue.RadioButton);
+    app.component('p-ripple', PrimeVue.Ripple);
+    app.component('p-row', PrimeVue.Row);
+    app.component('p-scrollpanel', PrimeVue.ScrollPanel);
+    app.component('p-scrolltop', PrimeVue.ScrollTop);
+    app.component('p-select', PrimeVue.Select);
+    app.component('p-selectbutton', PrimeVue.SelectButton);
+    app.component('p-skeleton', PrimeVue.Skeleton);
+    app.component('p-slider', PrimeVue.Slider);
+    app.component('p-sidebar', PrimeVue.Sidebar);
+    app.component('p-speeddial', PrimeVue.SpeedDial);
+    app.component('p-splitbutton', PrimeVue.SplitButton);
+    app.component('p-splitter', PrimeVue.Splitter);
+    app.component('p-splitterpanel', PrimeVue.SplitterPanel);
+    app.component('p-stepper', PrimeVue.Stepper);
+    app.component('p-stepperpanel', PrimeVue.StepperPanel);
+    app.component('p-steps', PrimeVue.Steps);
+    app.component('p-styleclass', PrimeVue.StyleClass);
+    app.component('p-tabmenu', PrimeVue.TabMenu);
+    app.component('p-tabs', PrimeVue.Tabs);
+    app.component('p-tablist', PrimeVue.TabList);
+    app.component('p-tab', PrimeVue.Tab);
+    app.component('p-tabpanels', PrimeVue.TabPanels);
+    app.component('p-tabpanel', PrimeVue.TabPanel);
+    app.component('p-tabview', PrimeVue.TabView);
+    app.component('p-tag', PrimeVue.Tag);
+    app.component('p-terminal', PrimeVue.Terminal);
+    app.component('p-textarea', PrimeVue.Textarea);
+    app.component('p-tieredmenu', PrimeVue.TieredMenu);
+    app.component('p-timeline', PrimeVue.Timeline);
+    app.component('p-togglebutton', PrimeVue.ToggleButton);
+    app.component('p-toggleswitch', PrimeVue.ToggleSwitch);
+    app.component('p-tooltip', PrimeVue.Tooltip);
+    app.component('p-toast', PrimeVue.Toast);
+    app.component('p-toastservice', PrimeVue.ToastService);
+    app.component('p-toolbar', PrimeVue.Toolbar);
+    app.component('p-tree', PrimeVue.Tree);
+    app.component('p-treeselect', PrimeVue.TreeSelect);
+    app.component('p-treetable', PrimeVue.TreeTable);
+    app.component('p-virtualscroller', PrimeVue.VirtualScroller);
+  }
+
+  app.mount('#app');
+</script>
+
+</html>
