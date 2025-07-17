@@ -48,7 +48,6 @@
 
       <p-splitterpanel class="flex items-center justify-center">
         <!-- auto to build form by jsonschema -->
-
         <form @submit.prevent="handleSubmit">
 
           <p-autoform :schema="parsedSchema" :data="formData" :gw="getWidget" :autits="autocompleteItems"></p-autoform>
@@ -81,7 +80,6 @@
       const errorMessage = ref(null);
       const loading = ref(false);
 
-      // Tab logic
       const jsonschema = ref(`
 {
   "title": "PrimeVue Full Demo Form",
@@ -214,6 +212,25 @@
         }
       }
     },
+    "addresses": {
+      "type": "array",
+      "title": "Addresses List",
+      "items": {
+        "type": "object",
+        "title": "Addresses",
+        "required": ["country", "city"],
+        "properties": {
+          "country": { "type": "string", "title": "Country" },
+          "state": { "type": "string", "title": "State/Province" },
+          "city": { "type": "string", "title": "City" },
+          "postalCode": {
+            "type": "string",
+            "title": "Postal Code",
+            "pattern": "^[0-9A-Za-z-]{3,10}$"
+          }
+        }
+      }
+    },
     "agree": {
       "type": "boolean",
       "title": "I agree to the terms",
@@ -267,6 +284,17 @@
             data[key] = field.default;
           } else if (field.type === 'array') {
             data[key] = [];
+            if (field.items.type === 'object') {
+              data[key].addItem = () => {
+                var tmpitem = {};
+                initializeFormData(field.items, tmpitem);
+                data[key].push(tmpitem);
+              };
+              data[key].delItem = (index) => {
+                data[key].splice(index, 1);
+              }
+              data[key].addItem();
+            }
           } else if (field.type === 'boolean') {
             data[key] = false;
           } else if (field.type === 'object') {
@@ -278,7 +306,8 @@
         }
       }
       initializeFormData(parsedSchema.value, formData.value);
-      
+      console.log(formData.value);
+
       const autocompleteItems = ref([]);
 
       function getWidget(field, key, data) {
@@ -305,6 +334,7 @@
         }
         if (field.type === 'array') {
           if (field.items?.enum) return 'multiselect';
+          if (field.items?.type === 'object') return 'objectarray';
           return 'chips'; // free-form strings
         }
         if (field.type === 'object') {
@@ -340,8 +370,140 @@
       };
     }
   });
+  app.component('p-autoform', {
+    props: ['schema', 'data', 'gw', 'autits'],
+    template: `
+        <div class="w-full rounded overflow-hidden shadow-lg">
+          <div v-for="(field, key) in schema.properties" :key="key" class="m-2">
+            <label :for="key" class="block mb-1 font-medium">
+              {{ field.title || key }}
+              <span v-if="Array.isArray(schema.required) && schema.required.includes(key)" class="text-red-500">*</span>
+            </label>
 
-  {
+            <!-- Switch -->
+            <div v-if="gw(field, key, data[key]) === 'switch'">
+              <p-toggleswitch v-model="data[key]" :inputId="key" />
+            </div>
+
+            <!-- Radio group -->
+            <div v-else-if="gw(field, key, data[key]) === 'radio'">
+              <div class="flex gap-4">
+                <div v-for="opt in field.enum" :key="opt" class="flex items-center gap-1">
+                  <p-radiobutton :inputId="key + '-' + opt" :name="key" :value="opt" v-model="data[key]" />
+                  <label :for="key + '-' + opt">{{ opt }}</label>
+                </div>
+              </div>
+            </div>
+
+            <!-- Slider -->
+            <div v-else-if="gw(field, key, data[key]) === 'slider'">
+              <p-slider v-model="data[key]" :min="field.minimum ?? 0" :max="field.maximum ?? 100" />
+              <div class="text-sm mt-1">{{ data[key] }}</div>
+            </div>
+
+            <!-- Rating -->
+            <div v-else-if="gw(field, key, data[key]) === 'rating'">
+              <p-rating v-model="data[key]" :stars="field.maximum ?? 5" :cancel="false" />
+            </div>
+
+            <!-- File -->
+            <div v-else-if="gw(field, key, data[key]) === 'file'">
+              <p-fileupload mode="basic" chooseLabel="Choose" :auto="true" customUpload
+                @uploader="onFileUpload(key, $event)" :accept="field.contentMediaType || '*/*'" />
+              <div v-if="data[key]" class="text-xs mt-1 italic">
+                {{ data[key]?.name || 'File selected' }}
+              </div>
+            </div>
+
+            <!-- Color -->
+            <div v-else-if="gw(field, key, data[key]) === 'color'">
+              <p-colorpicker v-model="data[key]" :inputId="key" />
+            </div>
+
+            <!-- Chips -->
+            <div v-else-if="gw(field, key, data[key]) === 'chips'">
+              <p-autocomplete  v-model="data[key]" multiple fluid :suggestions="autits.value" @complete="(e) => autits.value=[e.query]"
+              :inputId="key" />
+            </div>
+            
+            <!-- objectarray -->            
+            <div v-else-if="gw(field, key, data[key]) === 'objectarray'">              
+              <p-button v-if="data[key].addItem" icon="pi pi-plus" severity="success"
+                        size="small" @click="data[key].addItem"/>
+              <div v-for="(v, i) in data[key]" :key="key" class="m-2">
+                <p-button  icon="pi pi-times" severity="danger"
+                        size="small" @click="()=>data[key].delItem(i)"/>
+                <p-autoform :schema="schema.properties[key].items"
+                            :data="data[key][i]" :gw="gw" :autits="autits"/>
+              </div>
+            </div>
+            
+
+            <!-- SelectButton -->
+            <div v-else-if="gw(field, key, data[key]) === 'selectbutton'">
+              <p-selectbutton v-model="data[key]" :options="field.enum" optionLabel="" optionValue="" />
+            </div>
+            
+            <!-- text -->
+            <div v-else-if="gw(field, key, data[key]) === 'text'">
+              <p-inputtext v-model="data[key]" :id="key" class="w-full" :autoResize="true" />
+            </div>
+
+            <!-- Textarea -->
+            <div v-else-if="gw(field, key, data[key]) === 'textarea'">
+              <p-textarea v-model="data[key]" :id="key" class="w-full" :autoResize="true" />
+            </div>
+
+            <!-- Password -->
+            <div v-else-if="gw(field, key, data[key]) === 'password'">
+              <p-password v-model="data[key]" :id="key" class="w-full" toggle-mask />
+            </div>
+
+            <!-- Calendar -->
+            <div v-else-if="gw(field, key, data[key]) === 'calendar'">
+              <p-datepicker v-model="data[key]" :id="key" class="w-full" :showIcon="true"
+                :showTime="field.format === 'date-time'" />
+            </div>
+
+            <!-- Dropdown -->
+            <div v-else-if="gw(field, key, data[key]) === 'dropdown'">
+              <p-dropdown v-model="data[key]" :options="field.enum" :id="key" class="w-full"
+                :placeholder="'Select ' + (field.title || key)" />
+            </div>
+
+            <!-- MultiSelect -->
+            <div v-else-if="gw(field, key, data[key]) === 'multiselect'">
+              <p-multiselect v-model="data[key]" :options="field.items.enum" :id="key" class="w-full"
+                :placeholder="'Select ' + (field.title || key)" />
+            </div>
+
+            <!-- Number / Integer -->
+            <div v-else-if="gw(field, key, data[key]) === 'number'">
+              <p-inputnumber v-model="data[key]" :id="key" class="w-full" :useGrouping="false" :min="field.minimum"
+                :max="field.maximum" :step="field.multipleOf" />
+            </div>
+
+            <!-- Checkbox (boolean fallback) -->
+            <div v-else-if="gw(field, key, data[key]) === 'checkbox'">
+              <p-checkbox v-model="data[key]" :inputId="key" :binary="true" />
+            </div>
+
+            <!-- autoform -->
+            <div v-else-if="gw(field, key, data[key]) === 'autoform'">
+              <p-autoform :schema="schema.properties[key]" :data="data[key]"
+                          :gw="gw" :autits="autits"/>
+            </div>
+
+            <!-- Default text -->
+            <div v-else>
+              <p-textarea v-model="data[key]" :id="key" class="w-full" />
+            </div>
+          </div>
+        </div>
+  `});
+
+  // magic lines, never mind
+  (() => {
     app.use(PrimeVue.Config, {
       theme: {
         // preset: PrimeVue.Themes.Aura,
@@ -474,126 +636,9 @@
     app.component('p-treeselect', PrimeVue.TreeSelect);
     app.component('p-treetable', PrimeVue.TreeTable);
     app.component('p-virtualscroller', PrimeVue.VirtualScroller);
-  }
+    app.mount('#app');
+  })();
 
-  app.component('p-autoform', {
-    props: ['schema', 'data', 'gw', 'autits'],
-    template: `
-        <div v-if="schema&&data&&gw">
-          <div v-for="(field, key) in schema.properties" :key="key" class="m-2">
-            <label :for="key" class="block mb-1 font-medium">
-              {{ field.title || key }}
-              <span v-if="Array.isArray(schema.required) && schema.required.includes(key)" class="text-red-500">*</span>
-            </label>
-
-            <!-- Switch -->
-            <div v-if="gw(field, key, data[key]) === 'switch'">
-              <p-toggleswitch v-model="data[key]" :inputId="key" />
-            </div>
-
-            <!-- Radio group -->
-            <div v-else-if="gw(field, key, data[key]) === 'radio'">
-              <div class="flex gap-4">
-                <div v-for="opt in field.enum" :key="opt" class="flex items-center gap-1">
-                  <p-radiobutton :inputId="key + '-' + opt" :name="key" :value="opt" v-model="data[key]" />
-                  <label :for="key + '-' + opt">{{ opt }}</label>
-                </div>
-              </div>
-            </div>
-
-            <!-- Slider -->
-            <div v-else-if="gw(field, key, data[key]) === 'slider'">
-              <p-slider v-model="data[key]" :min="field.minimum ?? 0" :max="field.maximum ?? 100" />
-              <div class="text-sm mt-1">{{ data[key] }}</div>
-            </div>
-
-            <!-- Rating -->
-            <div v-else-if="gw(field, key, data[key]) === 'rating'">
-              <p-rating v-model="data[key]" :stars="field.maximum ?? 5" :cancel="false" />
-            </div>
-
-            <!-- File -->
-            <div v-else-if="gw(field, key, data[key]) === 'file'">
-              <p-fileupload mode="basic" chooseLabel="Choose" :auto="true" customUpload
-                @uploader="onFileUpload(key, $event)" :accept="field.contentMediaType || '*/*'" />
-              <div v-if="data[key]" class="text-xs mt-1 italic">
-                {{ data[key]?.name || 'File selected' }}
-              </div>
-            </div>
-
-            <!-- Color -->
-            <div v-else-if="gw(field, key, data[key]) === 'color'">
-              <p-colorpicker v-model="data[key]" :inputId="key" />
-            </div>
-
-            <!-- Chips -->
-            <div v-else-if="gw(field, key, data[key]) === 'chips'">
-              <p-autocomplete  v-model="data[key]" multiple fluid :suggestions="autits.value" @complete="(e) => autits.value=[e.query]"
-              :inputId="key" />
-            </div>
-
-            <!-- SelectButton -->
-            <div v-else-if="gw(field, key, data[key]) === 'selectbutton'">
-              <p-selectbutton v-model="data[key]" :options="field.enum" optionLabel="" optionValue="" />
-            </div>
-            
-            <!-- text -->
-            <div v-else-if="gw(field, key, data[key]) === 'text'">
-              <p-inputtext v-model="data[key]" :id="key" class="w-full" :autoResize="true" />
-            </div>
-
-            <!-- Textarea -->
-            <div v-else-if="gw(field, key, data[key]) === 'textarea'">
-              <p-textarea v-model="data[key]" :id="key" class="w-full" :autoResize="true" />
-            </div>
-
-            <!-- Password -->
-            <div v-else-if="gw(field, key, data[key]) === 'password'">
-              <p-password v-model="data[key]" :id="key" class="w-full" toggle-mask />
-            </div>
-
-            <!-- Calendar -->
-            <div v-else-if="gw(field, key, data[key]) === 'calendar'">
-              <p-datepicker v-model="data[key]" :id="key" class="w-full" :showIcon="true"
-                :showTime="field.format === 'date-time'" />
-            </div>
-
-            <!-- Dropdown -->
-            <div v-else-if="gw(field, key, data[key]) === 'dropdown'">
-              <p-dropdown v-model="data[key]" :options="field.enum" :id="key" class="w-full"
-                :placeholder="'Select ' + (field.title || key)" />
-            </div>
-
-            <!-- MultiSelect -->
-            <div v-else-if="gw(field, key, data[key]) === 'multiselect'">
-              <p-multiselect v-model="data[key]" :options="field.items.enum" :id="key" class="w-full"
-                :placeholder="'Select ' + (field.title || key)" />
-            </div>
-
-            <!-- Number / Integer -->
-            <div v-else-if="gw(field, key, data[key]) === 'number'">
-              <p-inputnumber v-model="data[key]" :id="key" class="w-full" :useGrouping="false" :min="field.minimum"
-                :max="field.maximum" :step="field.multipleOf" />
-            </div>
-
-            <!-- Checkbox (boolean fallback) -->
-            <div v-else-if="gw(field, key, data[key]) === 'checkbox'">
-              <p-checkbox v-model="data[key]" :inputId="key" :binary="true" />
-            </div>
-
-            <!-- autoform -->
-            <div v-else-if="gw(field, key, data[key]) === 'autoform'">
-              <p-autoform :schema="schema.properties[key]" :data="data[key]" :gw="gw" />
-            </div>
-
-            <!-- Default text -->
-            <div v-else>
-              <p-textarea v-model="data[key]" :id="key" class="w-full" />
-            </div>
-          </div>
-        </div>
-  `});
-  app.mount('#app');
 </script>
 
 </html>
