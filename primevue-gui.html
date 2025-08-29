@@ -50,7 +50,7 @@
         <!-- auto to build form by jsonschema -->
         <form @submit.prevent="handleSubmit">
 
-          <p-autoform :schema="parsedSchema" :data="formData" :gw="getWidget" :autits="autocompleteItems"></p-autoform>
+          <p-autoform :schema="parsedSchema" :data="formData" :autits="autocompleteItems"></p-autoform>
 
           <p-button label="Submit" type="submit" class="w-full"></p-button>
         </form>
@@ -240,29 +240,6 @@
 }
 `);
 
-      // Helper: Build children nodes from API response
-      function getIcon(entry) {
-        if (entry.isDir) {
-          return 'pi pi-fw pi-folder';
-        }
-        // Simple filetype detection (add more as you like)
-        const ext = entry.name.split('.').pop().toLowerCase();
-        if (['jpg', 'png', 'gif', 'jpeg', 'bmp', 'svg'].includes(ext)) {
-          return 'pi pi-fw pi-image';
-        }
-        if (['txt', 'md', 'log'].includes(ext)) {
-          return 'pi pi-fw pi-file';
-        }
-        if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) {
-          return 'pi pi-fw pi-inbox';
-        }
-        if (['js', 'ts', 'json', 'html', 'css', 'vue'].includes(ext)) {
-          return 'pi pi-fw pi-code';
-        }
-        // Fallback
-        return 'pi pi-fw pi-file';
-      }
-
       /* ------------------------------------------------------------------
          SCHEMA STRING (replace later w/ full demo below if desired)
       ------------------------------------------------------------------ */
@@ -273,9 +250,7 @@
           return { properties: {} };
         }
       });
-
       const formData = ref({});
-
       function initializeFormData(schema, data) {
         const props = schema.properties || {};
         for (const key in props) {
@@ -307,48 +282,7 @@
       }
       initializeFormData(parsedSchema.value, formData.value);
       console.log(formData.value);
-
       const autocompleteItems = ref([]);
-
-      function getWidget(field, key, data) {
-        // explicit override first
-        const w = field['x-pv-widget'];
-        if (w) return w;
-
-        // heuristics
-        if (field.type === 'boolean') return 'checkbox';
-        if (field.type === 'string') {
-          if (field.format === 'password') return 'password';
-          if (field.format === 'date' || field.format === 'date-time') return 'calendar';
-          if (field.format === 'email') return 'email'; // renders as inputtext w/ type=email
-          if (field.format === 'uri' || field.format === 'url') return 'url';
-          if (field.format === 'color') return 'color';
-          if (Array.isArray(field.enum)) return 'dropdown';
-          // large text fallback
-          if (data.length > 20) return 'textarea';
-          if (field.maxLength && field.maxLength > 200) return 'textarea';
-        }
-        if (field.type === 'integer' || field.type === 'number') {
-          if (Array.isArray(field.enum)) return 'dropdown';
-          return 'number';
-        }
-        if (field.type === 'array') {
-          if (field.items?.enum) return 'multiselect';
-          if (field.items?.type === 'object') return 'objectarray';
-          return 'chips'; // free-form strings
-        }
-        if (field.type === 'object') {
-          return 'autoform';
-        }
-        return 'text';
-      }
-
-      /* -------------- File Upload handler ------------------------------- */
-      function onFileUpload(key, event) {
-        // event.files is an array of File objects
-        formData.value[key] = event.files?.length ? event.files[0] : null;
-        showInfo(`Loaded file for ${key}: ${formData.value[key]?.name || 'none'}`);
-      }
 
       /* ---------------- Submit ------------------------------------------ */
       function handleSubmit() {
@@ -363,15 +297,72 @@
         parsedSchema,
         formData,
         handleSubmit,
-
         autocompleteItems,
-        getWidget,
-        onFileUpload,
       };
     }
   });
   app.component('p-autoform', {
-    props: ['schema', 'data', 'gw', 'autits'],
+    props: ['schema', 'data', 'autits'],
+    methods: {      
+        getIcon(entry) {
+          if (entry.isDir) {
+            return 'pi pi-fw pi-folder';
+          }
+          // Simple filetype detection (add more as you like)
+          const ext = entry.name.split('.').pop().toLowerCase();
+          if (['jpg', 'png', 'gif', 'jpeg', 'bmp', 'svg'].includes(ext)) {
+            return 'pi pi-fw pi-image';
+          }
+          if (['txt', 'md', 'log'].includes(ext)) {
+            return 'pi pi-fw pi-file';
+          }
+          if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) {
+            return 'pi pi-fw pi-inbox';
+          }
+          if (['js', 'ts', 'json', 'html', 'css', 'vue'].includes(ext)) {
+            return 'pi pi-fw pi-code';
+          }
+          // Fallback
+          return 'pi pi-fw pi-file';
+        },
+        onFileUpload(key, event) {
+          // event.files is an array of File objects
+          formData.value[key] = event.files?.length ? event.files[0] : null;
+          showInfo(`Loaded file for ${key}: ${formData.value[key]?.name || 'none'}`);
+        },
+        gw(field, key, data) {
+          // explicit override first
+          const w = field['x-pv-widget'];
+          if (w) return w;
+
+          // heuristics
+          if (field.type === 'boolean') return 'checkbox';
+          if (field.type === 'string') {
+            if (field.format === 'password') return 'password';
+            if (field.format === 'date' || field.format === 'date-time') return 'calendar';
+            if (field.format === 'email') return 'email'; // renders as inputtext w/ type=email
+            if (field.format === 'uri' || field.format === 'url') return 'url';
+            if (field.format === 'color') return 'color';
+            if (Array.isArray(field.enum)) return 'dropdown';
+            // large text fallback
+            if (data.length > 20) return 'textarea';
+            if (field.maxLength && field.maxLength > 200) return 'textarea';
+          }
+          if (field.type === 'integer' || field.type === 'number') {
+            if (Array.isArray(field.enum)) return 'dropdown';
+            return 'number';
+          }
+          if (field.type === 'array') {
+            if (field.items?.enum) return 'multiselect';
+            if (field.items?.type === 'object') return 'objectarray';
+            return 'chips'; // free-form strings
+          }
+          if (field.type === 'object') {
+            return 'autoform';
+          }
+          return 'text';
+        }
+    },
     template: `
         <div class="w-full rounded overflow-hidden shadow-lg">
           <div v-for="(field, key) in schema.properties" :key="key" class="m-2">
