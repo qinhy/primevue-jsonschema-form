@@ -245,34 +245,54 @@
       ------------------------------------------------------------------ */
       const formData = ref({});
       function initializeFormData(schema, data) {
+        if (!schema || typeof schema !== 'object') return data;
+
         const props = schema.properties || {};
         for (const key in props) {
-          const field = props[key];
-          if (field.default !== undefined) {
-            data[key] = field.default;
-          } else if (field.type === 'array') {
-            data[key] = [];
-            if (field.items.type === 'object') {
-              data[key].addItem = () => {
-                var tmpitem = {};
-                initializeFormData(field.items, tmpitem);
-                data[key].push(tmpitem);
-              };
-              data[key].delItem = (index) => {
-                data[key].splice(index, 1);
-              }
-              data[key].addItem();
+          const field = props[key] || {};
+          let type = field.type;
+          if (Array.isArray(type)) type = type.find(t => t !== 'null') || 'null';
+
+          if (type === 'boolean') {
+            data[key] = field.default === undefined ? false : field.default;
+
+          } else if (type === 'integer' || type === 'number') {
+            data[key] = field.default === undefined ? 0 : field.default;
+
+          } else if (type === 'string') {
+            data[key] = field.default === undefined ? '' : field.default;
+
+          } else if (type === 'object') {
+            if (field.default && typeof field.default === 'object' && !Array.isArray(field.default)) {
+              data[key] = JSON.parse(JSON.stringify(field.default));
+            } else {
+              data[key] = {};
+              initializeFormData(field, data[key]); // use field, not schema.properties[key]
             }
-          } else if (field.type === 'boolean') {
-            data[key] = false;
-          } else if (field.type === 'object') {
-            data[key] = {};
-            initializeFormData(schema.properties[key], data[key]);
+
+          } else if (type === 'array') {
+            if (Array.isArray(field.default)) {
+              data[key] = JSON.parse(JSON.stringify(field.default));
+            } else {
+              data[key] = [];
+              const items = field.items;
+              if (items && (items.type === 'object' || items.properties)) {
+                data[key].addItem = () => {
+                  const tmpitem = {};
+                  initializeFormData(items, tmpitem);
+                  data[key].push(tmpitem);
+                };
+                data[key].delItem = (index) => data[key].splice(index, 1);
+              }
+            }
+
           } else {
-            data[key] = '';
+            data[key] = field.default === undefined ? null : field.default;
           }
         }
+        return data;
       }
+
       initializeFormData(jsonschema.value, formData.value);
       const autocompleteItems = ref([]);
 
