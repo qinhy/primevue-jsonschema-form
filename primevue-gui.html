@@ -43,14 +43,14 @@
     <p class="text-xl font-bold text-center px-4 py-2">primevue-jsonschema-form</p>
     <p-splitter>
       <p-splitterpanel class="flex items-center justify-center">
-        <p-textarea v-model="jsonschema" class="h-full w-full" />
+        <p-textarea :value="JSON.stringify(jsonschema)" class="h-full w-full" />
       </p-splitterpanel>
 
       <p-splitterpanel class="flex items-center justify-center">
         <!-- auto to build form by jsonschema -->
         <form @submit.prevent="handleSubmit">
 
-          <p-autoform :schema="parsedSchema" :data="formData" :autits="autocompleteItems"></p-autoform>
+          <p-autoform :schema="jsonschema" :data="formData" :autits="autocompleteItems"></p-autoform>
 
           <p-button label="Submit" type="submit" class="w-full"></p-button>
         </form>
@@ -80,7 +80,7 @@
       const errorMessage = ref(null);
       const loading = ref(false);
 
-      const jsonschema = ref(`
+      const jsonschema = ref(JSON.parse(`
 {
   "title": "PrimeVue Full Demo Form",
   "description": "A kitchen-sink schema to exercise most PrimeVue field types.",
@@ -238,18 +238,11 @@
     }
   }
 }
-`);
+`));
 
       /* ------------------------------------------------------------------
          SCHEMA STRING (replace later w/ full demo below if desired)
       ------------------------------------------------------------------ */
-      const parsedSchema = computed(() => {
-        try {
-          return JSON.parse(jsonschema.value);
-        } catch {
-          return { properties: {} };
-        }
-      });
       const formData = ref({});
       function initializeFormData(schema, data) {
         const props = schema.properties || {};
@@ -280,8 +273,7 @@
           }
         }
       }
-      initializeFormData(parsedSchema.value, formData.value);
-      console.log(formData.value);
+      initializeFormData(jsonschema.value, formData.value);
       const autocompleteItems = ref([]);
 
       /* ---------------- Submit ------------------------------------------ */
@@ -294,13 +286,13 @@
         errorMessage,
         loading,
         jsonschema,
-        parsedSchema,
         formData,
         handleSubmit,
         autocompleteItems,
       };
     }
   });
+  
   app.component('p-autoform', {
     props: ['schema', 'data', 'autits'],
     methods: {      
